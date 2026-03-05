@@ -1,6 +1,7 @@
 import wx
 import os
 import json
+from datetime import datetime
 
 
 class DiaryPanel(wx.Frame):
@@ -56,4 +57,58 @@ class DiaryPanel(wx.Frame):
         self.load_entries()
 
     def on_export(self, event):
-        wx.MessageBox("Export feature coming soon!", "KiCad Design Diary", wx.OK | wx.ICON_INFORMATION)
+        # Ask user where to save
+        with wx.FileDialog(self, "Save Report", wildcard="HTML files (*.html)|*.html",
+                          style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as dlg:
+            if dlg.ShowModal() == wx.ID_CANCEL:
+                return
+            export_path = dlg.GetPath()
+
+        # Load all snapshots
+        snapshots = sorted([f for f in os.listdir(self.diary_folder) if f.endswith(".json")])
+        entries = []
+        for snapshot_file in reversed(snapshots):
+            path = os.path.join(self.diary_folder, snapshot_file)
+            with open(path, "r") as f:
+                data = json.load(f)
+            entries.append(data)
+
+        # Generate HTML report
+        html = """<!DOCTYPE html>
+<html>
+<head>
+<title>KiCad Design Diary Report</title>
+<style>
+    body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+    h1 { color: #1F3864; }
+    h2 { color: #2E75B6; }
+    .entry { background: white; border-left: 4px solid #2E75B6; margin: 15px 0; padding: 15px; border-radius: 4px; }
+    .timestamp { color: #888; font-size: 0.9em; }
+    .change { background: #EBF3FB; padding: 5px 10px; margin: 5px 0; border-radius: 3px; }
+    .no-change { color: #aaa; font-style: italic; }
+</style>
+</head>
+<body>
+<h1>KiCad Design Diary</h1>
+<h2>Complete Design Change History</h2>
+<p>Generated on: """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</p>
+<hr>
+"""
+        for entry in entries:
+            timestamp = entry.get("timestamp", "Unknown")
+            changes = entry.get("changes", [])
+            html += f'<div class="entry">'
+            html += f'<div class="timestamp">{timestamp}</div>'
+            if changes:
+                for change in changes:
+                    html += f'<div class="change">• {change}</div>'
+            else:
+                html += '<div class="no-change">No changes detected</div>'
+            html += '</div>'
+
+        html += "</body></html>"
+
+        with open(export_path, "w") as f:
+            f.write(html)
+
+        wx.MessageBox(f"Report saved to {export_path}", "Export Successful", wx.OK | wx.ICON_INFORMATION)
