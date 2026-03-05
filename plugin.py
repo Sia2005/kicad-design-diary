@@ -2,6 +2,7 @@ import pcbnew
 import os
 import json
 from datetime import datetime
+import wx
 
 
 class DesignDiaryPlugin(pcbnew.ActionPlugin):
@@ -24,7 +25,6 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
         diary_folder = os.path.join(project_folder, ".design_diary")
         os.makedirs(diary_folder, exist_ok=True)
 
-        # Read current components
         current_components = {}
         for fp in board.GetFootprints():
             current_components[fp.GetReference()] = {
@@ -32,7 +32,6 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
                 "footprint": fp.GetFPIDAsString()
             }
 
-        # Load previous snapshot if it exists
         previous_components = {}
         snapshots = sorted([f for f in os.listdir(diary_folder) if f.endswith(".json")])
         if snapshots:
@@ -41,7 +40,6 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
                 last_snapshot = json.load(f)
                 previous_components = last_snapshot.get("components", {})
 
-        # Run diff engine
         changes = []
         for ref in current_components:
             if ref not in previous_components:
@@ -52,7 +50,6 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
             if ref not in current_components:
                 changes.append(f"Deleted component {ref}")
 
-        # Save new snapshot
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         filename = datetime.now().strftime("%Y%m%d_%H%M%S") + ".json"
         snapshot_path = os.path.join(diary_folder, filename)
@@ -65,10 +62,5 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
         with open(snapshot_path, "w") as f:
             json.dump(snapshot, f, indent=2)
 
-        # Print result
-        if changes:
-            msg = f"Design Diary: {len(changes)} change(s) detected — {changes[0]}"
-        else:
-            msg = "Design Diary: No changes detected since last snapshot."
-
-        print(msg)
+        from kicad_design_diary.ui_panel import DiaryPanel
+        frame = DiaryPanel(None, diary_folder)
