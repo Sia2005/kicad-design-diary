@@ -7,7 +7,7 @@ from datetime import datetime
 class DiaryPanel(wx.Frame):
 
     def __init__(self, parent, diary_folder):
-        super().__init__(parent, title="KiCad Design Diary", size=(600, 500))
+        super().__init__(parent, title="KiCad Design Diary", size=(700, 550))
         self.diary_folder = diary_folder
         self.init_ui()
         self.load_entries()
@@ -23,7 +23,7 @@ class DiaryPanel(wx.Frame):
         main_sizer.Add(title, 0, wx.ALL | wx.ALIGN_CENTER, 10)
         self.list_ctrl = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.BORDER_SUNKEN)
         self.list_ctrl.InsertColumn(0, "Timestamp", width=160)
-        self.list_ctrl.InsertColumn(1, "Changes", width=400)
+        self.list_ctrl.InsertColumn(1, "Changes", width=500)
         main_sizer.Add(self.list_ctrl, 1, wx.ALL | wx.EXPAND, 10)
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
         refresh_btn = wx.Button(panel, label="Refresh")
@@ -46,10 +46,7 @@ class DiaryPanel(wx.Frame):
                 data = json.load(f)
             timestamp = data.get("timestamp", "Unknown")
             changes = data.get("changes", [])
-            if changes:
-                changes_text = " | ".join(changes)
-            else:
-                changes_text = "No changes detected"
+            changes_text = " | ".join(changes) if changes else "No changes detected"
             index = self.list_ctrl.InsertItem(self.list_ctrl.GetItemCount(), timestamp)
             self.list_ctrl.SetItem(index, 1, changes_text)
 
@@ -57,14 +54,12 @@ class DiaryPanel(wx.Frame):
         self.load_entries()
 
     def on_export(self, event):
-        # Ask user where to save
         with wx.FileDialog(self, "Save Report", wildcard="HTML files (*.html)|*.html",
                           style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as dlg:
             if dlg.ShowModal() == wx.ID_CANCEL:
                 return
             export_path = dlg.GetPath()
 
-        # Load all snapshots
         snapshots = sorted([f for f in os.listdir(self.diary_folder) if f.endswith(".json")])
         entries = []
         for snapshot_file in reversed(snapshots):
@@ -73,42 +68,189 @@ class DiaryPanel(wx.Frame):
                 data = json.load(f)
             entries.append(data)
 
-        # Generate HTML report
-        html = """<!DOCTYPE html>
-<html>
-<head>
-<title>KiCad Design Diary Report</title>
-<style>
-    body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
-    h1 { color: #1F3864; }
-    h2 { color: #2E75B6; }
-    .entry { background: white; border-left: 4px solid #2E75B6; margin: 15px 0; padding: 15px; border-radius: 4px; }
-    .timestamp { color: #888; font-size: 0.9em; }
-    .change { background: #EBF3FB; padding: 5px 10px; margin: 5px 0; border-radius: 3px; }
-    .no-change { color: #aaa; font-style: italic; }
-</style>
-</head>
-<body>
-<h1>KiCad Design Diary</h1>
-<h2>Complete Design Change History</h2>
-<p>Generated on: """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</p>
-<hr>
-"""
+        total_changes = sum(len(e.get("changes", [])) for e in entries)
+        total_sessions = len(entries)
+        board_file = entries[0].get("board_file", "Unknown") if entries else "Unknown"
+        board_name = os.path.basename(board_file) if board_file != "Unknown" else "Unknown"
+
+        component_freq = {}
+        for entry in entries:
+            for change in entry.get("changes", []):
+                parts = change.split(" ")
+                for part in parts:
+                    if len(part) >= 2 and part[0].isalpha() and any(c.isdigit() for c in part):
+                        component_freq[part] = component_freq.get(part, 0) + 1
+
+        top_components = sorted(component_freq.items(), key=lambda x: x[1], reverse=True)[:6]
+
+        bar_html = ""
+        if top_components:
+            max_val = max(v for _, v in top_components)
+            for comp, count in top_components:
+                width = int((count / max_val) * 100)
+                bar_html += f"""
+    <div class="bar-row">
+      <div class="bar-label">{comp}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:{width}%"></div></div>
+      <div class="bar-count">{count}</div>
+    </div>"""
+        else:
+            bar_html = '<div class="empty-note">No component modifications recorded yet</div>'
+
+        timeline_html = ""
         for entry in entries:
             timestamp = entry.get("timestamp", "Unknown")
             changes = entry.get("changes", [])
-            html += f'<div class="entry">'
-            html += f'<div class="timestamp">{timestamp}</div>'
+            has_changes = len(changes) > 0
+            entry_class = "entry has-changes" if has_changes else "entry"
+            tag_class = "entry-tag active" if has_changes else "entry-tag"
+            tag_text = f"{len(changes)} change{'s' if len(changes) != 1 else ''}" if has_changes else "0 changes"
+
+            change_rows = ""
             if changes:
                 for change in changes:
-                    html += f'<div class="change">• {change}</div>'
+                    if "Added" in change:
+                        pill = '<div class="pill pill-add">Added</div>'
+                    elif "Deleted" in change:
+                        pill = '<div class="pill pill-del">Deleted</div>'
+                    else:
+                        pill = '<div class="pill pill-mod">Modified</div>'
+                    change_rows += f"""
+        <div class="change-row">
+          {pill}
+          <div class="change-desc">{change}</div>
+        </div>"""
             else:
-                html += '<div class="no-change">No changes detected</div>'
-            html += '</div>'
+                change_rows = '<div class="no-entry">No changes recorded in this session</div>'
 
-        html += "</body></html>"
+            timeline_html += f"""
+    <div class="{entry_class}">
+      <div class="entry-head">
+        <div class="entry-ts">{timestamp}</div>
+        <div class="{tag_class}">{tag_text}</div>
+      </div>
+      <div class="entry-body">{change_rows}
+      </div>
+    </div>"""
 
-        with open(export_path, "w") as f:
+        generated = datetime.now().strftime("%B %d, %Y at %H:%M:%S")
+
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>KiCad Design Diary</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {{
+    --ink: #1a1410;
+    --ink-2: #3d342a;
+    --ink-3: #7a6e65;
+    --ink-4: #b5aca4;
+    --paper: #faf8f5;
+    --paper-2: #f2ede8;
+    --paper-3: #e8e0d8;
+    --accent: #b85c2c;
+    --green: #2d6a4f;
+    --green-bg: #f0f7f4;
+    --red: #9b2226;
+    --red-bg: #fdf0f0;
+    --blue: #1d4e89;
+    --blue-bg: #f0f4fb;
+    --rule: #ddd5cc;
+  }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ font-family: 'DM Sans', sans-serif; background: var(--paper); color: var(--ink); min-height: 100vh; }}
+  .page-rule {{ height: 4px; background: var(--ink); }}
+  .masthead {{ padding: 48px 64px 40px; border-bottom: 1px solid var(--rule); display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 24px; }}
+  .masthead-title {{ font-family: 'DM Serif Display', serif; font-size: 36px; color: var(--ink); letter-spacing: -0.5px; line-height: 1; }}
+  .masthead-title span {{ color: var(--accent); }}
+  .masthead-sub {{ font-size: 12px; color: var(--ink-3); margin-top: 6px; font-weight: 300; letter-spacing: 0.2px; }}
+  .masthead-date {{ font-family: 'DM Mono', monospace; font-size: 11px; color: var(--ink-3); line-height: 1.8; text-align: right; }}
+  .main {{ max-width: 860px; margin: 0 auto; padding: 48px 64px 80px; }}
+  .metrics {{ display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--rule); border-radius: 2px; margin-bottom: 48px; overflow: hidden; }}
+  .metric {{ padding: 28px 32px; border-right: 1px solid var(--rule); }}
+  .metric:last-child {{ border-right: none; }}
+  .metric-num {{ font-family: 'DM Serif Display', serif; font-size: 44px; color: var(--ink); line-height: 1; letter-spacing: -2px; }}
+  .metric-num span {{ font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; color: var(--accent); letter-spacing: 0; vertical-align: super; margin-left: 2px; }}
+  .metric-label {{ font-size: 10px; font-weight: 500; color: var(--ink-3); text-transform: uppercase; letter-spacing: 1.2px; margin-top: 8px; }}
+  .section-head {{ display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }}
+  .section-label {{ font-size: 10px; font-weight: 500; color: var(--ink-3); text-transform: uppercase; letter-spacing: 1.5px; white-space: nowrap; }}
+  .section-rule {{ flex: 1; height: 1px; background: var(--rule); }}
+  .chart-block {{ margin-bottom: 48px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 2px; padding: 28px 32px; }}
+  .bar-row {{ display: grid; grid-template-columns: 52px 1fr 28px; align-items: center; gap: 14px; margin-bottom: 12px; }}
+  .bar-row:last-child {{ margin-bottom: 0; }}
+  .bar-label {{ font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500; color: var(--ink-2); text-align: right; }}
+  .bar-track {{ height: 6px; background: var(--paper-3); border-radius: 1px; overflow: hidden; }}
+  .bar-fill {{ height: 100%; background: var(--accent); border-radius: 1px; }}
+  .bar-count {{ font-family: 'DM Mono', monospace; font-size: 11px; color: var(--ink-4); }}
+  .empty-note {{ font-size: 13px; color: var(--ink-4); font-style: italic; }}
+  .entry {{ border: 1px solid var(--rule); border-radius: 2px; margin-bottom: 10px; background: #ffffff; overflow: hidden; }}
+  .entry.has-changes {{ border-left: 3px solid var(--accent); }}
+  .entry-head {{ padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; background: var(--paper-2); border-bottom: 1px solid var(--rule); }}
+  .entry-ts {{ font-family: 'DM Mono', monospace; font-size: 11px; color: var(--ink-3); }}
+  .entry-tag {{ font-size: 9px; font-weight: 500; letter-spacing: 0.8px; text-transform: uppercase; color: var(--ink-4); }}
+  .entry-tag.active {{ color: var(--accent); }}
+  .entry-body {{ padding: 14px 20px; }}
+  .change-row {{ display: flex; align-items: baseline; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--paper-2); }}
+  .change-row:last-child {{ border-bottom: none; }}
+  .pill {{ font-size: 9px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; padding: 2px 8px; border-radius: 2px; white-space: nowrap; flex-shrink: 0; }}
+  .pill-add {{ background: var(--green-bg); color: var(--green); }}
+  .pill-del {{ background: var(--red-bg); color: var(--red); }}
+  .pill-mod {{ background: var(--blue-bg); color: var(--blue); }}
+  .change-desc {{ font-size: 13px; color: var(--ink-2); line-height: 1.5; font-weight: 300; }}
+  .no-entry {{ font-size: 12px; color: var(--ink-4); font-style: italic; }}
+  .colophon {{ margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--rule); font-size: 10px; color: var(--ink-4); display: flex; justify-content: space-between; font-family: 'DM Mono', monospace; }}
+</style>
+</head>
+<body>
+<div class="page-rule"></div>
+<div class="masthead">
+  <div>
+    <div class="masthead-title">KiCad Design<span> Diary</span></div>
+    <div class="masthead-sub">Automatic PCB Change History Report</div>
+  </div>
+  <div>
+    <div class="masthead-date">Generated: {generated}</div>
+    <div class="masthead-date">Board: {board_name}</div>
+  </div>
+</div>
+<div class="main">
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-num">{total_sessions}<span>sessions</span></div>
+      <div class="metric-label">Total Sessions</div>
+    </div>
+    <div class="metric">
+      <div class="metric-num">{total_changes}<span>events</span></div>
+      <div class="metric-label">Total Changes</div>
+    </div>
+    <div class="metric">
+      <div class="metric-num">{len(component_freq)}<span>refs</span></div>
+      <div class="metric-label">Components Tracked</div>
+    </div>
+  </div>
+  <div class="section-head">
+    <div class="section-label">Modification Frequency</div>
+    <div class="section-rule"></div>
+  </div>
+  <div class="chart-block">{bar_html}
+  </div>
+  <div class="section-head">
+    <div class="section-label">Change Timeline</div>
+    <div class="section-rule"></div>
+  </div>
+  <div class="timeline">{timeline_html}
+  </div>
+  <div class="colophon">
+    <span>KiCad Design Diary &mdash; Automatic PCB Change Tracking</span>
+    <span>v1.0.0</span>
+  </div>
+</div>
+</body>
+</html>"""
+
+        with open(export_path, "w", encoding="utf-8") as f:
             f.write(html)
 
-        wx.MessageBox(f"Report saved to {export_path}", "Export Successful", wx.OK | wx.ICON_INFORMATION)
+        wx.MessageBox("Report saved successfully.", "KiCad Design Diary", wx.OK | wx.ICON_INFORMATION)
