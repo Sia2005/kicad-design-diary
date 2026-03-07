@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 import wx
 
+_listener = None
 
 class DesignDiaryPlugin(pcbnew.ActionPlugin):
 
@@ -14,6 +15,8 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
         self.show_toolbar_button = True
 
     def Run(self):
+        global _listener
+
         board = pcbnew.GetBoard()
         board_path = board.GetFileName()
 
@@ -25,6 +28,14 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
         diary_folder = os.path.join(project_folder, ".design_diary")
         os.makedirs(diary_folder, exist_ok=True)
 
+        # Attach listener if not already attached
+        if _listener is None:
+            from kicad_design_diary.board_listener import DesignDiaryListener
+            _listener = DesignDiaryListener(board, diary_folder)
+            board.AddListener(_listener)
+            print("Design Diary: Auto-tracking enabled. Every change will be recorded.")
+
+        # Take a manual snapshot
         current_components = {}
         for fp in board.GetFootprints():
             current_components[fp.GetReference()] = {
@@ -62,5 +73,6 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
         with open(snapshot_path, "w") as f:
             json.dump(snapshot, f, indent=2)
 
+        # Open UI panel
         from kicad_design_diary.ui_panel import DiaryPanel
         frame = DiaryPanel(None, diary_folder)
