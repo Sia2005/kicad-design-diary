@@ -39,7 +39,7 @@ class DiaryPanel(wx.Frame):
         self.list_ctrl.DeleteAllItems()
         if not os.path.exists(self.diary_folder):
             return
-        snapshots = sorted([f for f in os.listdir(self.diary_folder) if f.endswith(".json")])
+        snapshots = sorted([f for f in os.listdir(self.diary_folder) if f.endswith(".json") and not f.startswith("SCH_")])
         for snapshot_file in reversed(snapshots):
             path = os.path.join(self.diary_folder, snapshot_file)
             with open(path, "r") as f:
@@ -60,7 +60,7 @@ class DiaryPanel(wx.Frame):
                 return
             export_path = dlg.GetPath()
 
-        snapshots = sorted([f for f in os.listdir(self.diary_folder) if f.endswith(".json")])
+        snapshots = sorted([f for f in os.listdir(self.diary_folder) if f.endswith(".json") and not f.startswith("SCH_")])
         entries = []
         for snapshot_file in reversed(snapshots):
             path = os.path.join(self.diary_folder, snapshot_file)
