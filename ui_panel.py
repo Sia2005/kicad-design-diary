@@ -140,17 +140,43 @@ class DiaryPanel(wx.Frame):
         import json
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        changes_since_last = self.get_changes_since_last_checkpoint()
+        summary = "SIMULATION CHECKPOINT — Design state saved before eSim simulation"
         filename = "SIM_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".json"
         checkpoint = {
             "timestamp": timestamp,
             "type": "simulation_checkpoint",
-            "changes": ["SIMULATION CHECKPOINT — Design state saved before eSim simulation"]
+            "changes": [summary],
+            "changes_since_last_sim": changes_since_last
         }
         path = os.path.join(self.diary_folder, filename)
         with open(path, "w") as f:
             json.dump(checkpoint, f, indent=2)
         self.load_entries()
-        wx.MessageBox(f"Simulation checkpoint saved at {timestamp}", "KiCad Design Diary", wx.OK | wx.ICON_INFORMATION)
+        if changes_since_last:
+            msg = f"Simulation checkpoint saved at {timestamp}\n\nChanges since last simulation:\n"
+            for c in changes_since_last:
+                msg += f"  • {c}\n"
+        else:
+            msg = f"Simulation checkpoint saved at {timestamp}\n\nNo changes since last simulation."
+        wx.MessageBox(msg, "KiCad Design Diary — Simulation Checkpoint", wx.OK | wx.ICON_INFORMATION)
+
+    def get_changes_since_last_checkpoint(self):
+        import json
+        all_files = sorted([f for f in os.listdir(self.diary_folder) if f.endswith(".json")])
+        last_sim_index = -1
+        for i, f in enumerate(all_files):
+            if f.startswith("SIM_"):
+                last_sim_index = i
+        changes = []
+        for f in all_files[last_sim_index + 1:]:
+            if f.startswith("SCH_"):
+                continue
+            path = os.path.join(self.diary_folder, f)
+            with open(path, "r") as jf:
+                data = json.load(jf)
+            changes.extend(data.get("changes", []))
+        return changes
 
     def on_refresh(self, event):
         self.load_entries()
