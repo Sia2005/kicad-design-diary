@@ -38,7 +38,7 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
                 "footprint": fp.GetFPIDAsString()
             }
         previous_components = {}
-        snapshots = sorted([f for f in os.listdir(diary_folder) if f.endswith(".json")])
+        snapshots = sorted([f for f in os.listdir(diary_folder) if f.endswith(".json") and not f.startswith("SCH_")])
         if snapshots:
             last_snapshot_path = os.path.join(diary_folder, snapshots[-1])
             with open(last_snapshot_path, "r") as f:
@@ -53,6 +53,13 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
         for ref in previous_components:
             if ref not in current_components:
                 changes.append(f"Deleted component {ref}")
+        sch_files = [f for f in os.listdir(project_folder) if f.endswith(".kicad_sch")]
+        if sch_files:
+            sch_path = os.path.join(project_folder, sch_files[0])
+            from kicad_design_diary.schematic_tracker import SchematicTracker
+            sch_tracker = SchematicTracker(diary_folder)
+            sch_changes = sch_tracker.take_snapshot(sch_path)
+            changes.extend(sch_changes)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         filename = datetime.now().strftime("%Y%m%d_%H%M%S") + ".json"
         snapshot_path = os.path.join(diary_folder, filename)
