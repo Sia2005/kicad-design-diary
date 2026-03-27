@@ -51,6 +51,8 @@ class SchematicTracker:
             "components": current,
             "changes": changes
         }
+        if not changes:
+            return changes
         path = os.path.join(self.diary_folder, filename)
         with open(path, "w") as f:
             json.dump(snapshot, f, indent=2)
