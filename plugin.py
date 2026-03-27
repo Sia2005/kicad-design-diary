@@ -59,16 +59,17 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
             sch_tracker = SchematicTracker(diary_folder)
             sch_changes = sch_tracker.take_snapshot(sch_path)
             changes.extend(sch_changes)
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        filename = datetime.now().strftime("%Y%m%d_%H%M%S") + ".json"
-        snapshot_path = os.path.join(diary_folder, filename)
-        snapshot = {
-            "timestamp": timestamp,
-            "board_file": board_path,
-            "components": current_components,
-            "changes": changes
-        }
-        with open(snapshot_path, "w") as f:
-            json.dump(snapshot, f, indent=2)
+        if changes:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            filename = datetime.now().strftime("%Y%m%d_%H%M%S") + ".json"
+            snapshot_path = os.path.join(diary_folder, filename)
+            snapshot = {
+                "timestamp": timestamp,
+                "board_file": board_path,
+                "components": current_components,
+                "changes": changes
+            }
+            with open(snapshot_path, "w") as f:
+                json.dump(snapshot, f, indent=2)
         from kicad_design_diary.ui_panel import DiaryPanel
         frame = DiaryPanel(None, diary_folder)
