@@ -163,19 +163,22 @@ class DiaryPanel(wx.Frame):
 
     def get_changes_since_last_checkpoint(self):
         import json
-        all_files = sorted([f for f in os.listdir(self.diary_folder) if f.endswith(".json")])
-        last_sim_index = -1
-        for i, f in enumerate(all_files):
-            if f.startswith("SIM_"):
-                last_sim_index = i
+        from datetime import datetime
+        all_files = [f for f in os.listdir(self.diary_folder) if f.endswith(".json")]
+        sim_files = sorted([f for f in all_files if f.startswith("SIM_")])
+        if not sim_files:
+            return []
+        last_sim_file = sim_files[-1]
+        last_sim_time = last_sim_file.replace("SIM_", "").replace(".json", "")
         changes = []
-        for f in all_files[last_sim_index + 1:]:
-            if f.startswith("SCH_"):
-                continue
-            path = os.path.join(self.diary_folder, f)
-            with open(path, "r") as jf:
-                data = json.load(jf)
-            changes.extend(data.get("changes", []))
+        pcb_files = sorted([f for f in all_files if not f.startswith("SIM_") and not f.startswith("SCH_")])
+        for f in pcb_files:
+            file_time = f.replace(".json", "")
+            if file_time > last_sim_time:
+                path = os.path.join(self.diary_folder, f)
+                with open(path, "r") as jf:
+                    data = json.load(jf)
+                changes.extend(data.get("changes", []))
         return changes
 
     def on_refresh(self, event):
