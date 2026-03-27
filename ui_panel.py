@@ -37,7 +37,8 @@ class ComponentHistoryFrame(wx.Frame):
             timestamp = data.get("timestamp", "Unknown")
             changes = data.get("changes", [])
             for change in changes:
-                if self.ref in change:
+                import re
+                if re.search(r"\b" + self.ref + r"\b", change):
                     index = self.list_ctrl.InsertItem(self.list_ctrl.GetItemCount(), timestamp)
                     self.list_ctrl.SetItem(index, 1, change)
 
