@@ -37,7 +37,7 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
                 "footprint": fp.GetFPIDAsString()
             }
         previous_components = {}
-        snapshots = sorted([f for f in os.listdir(diary_folder) if f.endswith(".json") and not f.startswith("SCH_")])
+        snapshots = sorted([f for f in os.listdir(diary_folder) if f.endswith(".json") and not f.startswith("SCH_") and not f.startswith("SIM_")])
         if snapshots:
             last_snapshot_path = os.path.join(diary_folder, snapshots[-1])
             with open(last_snapshot_path, "r") as f:
