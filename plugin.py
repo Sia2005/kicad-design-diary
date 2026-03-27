@@ -21,7 +21,7 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
         board = pcbnew.GetBoard()
         board_path = board.GetFileName()
         if not board_path:
-            print("Design Diary: Please save your project first.")
+            wx.MessageBox("Please save your project first.", "KiCad Design Diary", wx.OK | wx.ICON_WARNING)
             return
         project_folder = os.path.dirname(board_path)
         diary_folder = os.path.join(project_folder, ".design_diary")
@@ -30,7 +30,6 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
             from kicad_design_diary.board_listener import DesignDiaryListener
             _listener = DesignDiaryListener(board, diary_folder)
             board.AddListener(_listener)
-            print("Design Diary: Auto-tracking enabled.")
         current_components = {}
         for fp in board.GetFootprints():
             current_components[fp.GetReference()] = {
@@ -47,12 +46,12 @@ class DesignDiaryPlugin(pcbnew.ActionPlugin):
         changes = []
         for ref in current_components:
             if ref not in previous_components:
-                changes.append(f"Added component {ref} with value {current_components[ref]['value']}")
+                changes.append(f"PCB: Added component {ref} with value {current_components[ref]['value']}")
             elif current_components[ref]['value'] != previous_components[ref]['value']:
-                changes.append(f"Changed value of {ref} from {previous_components[ref]['value']} to {current_components[ref]['value']}")
+                changes.append(f"PCB: Changed value of {ref} from {previous_components[ref]['value']} to {current_components[ref]['value']}")
         for ref in previous_components:
             if ref not in current_components:
-                changes.append(f"Deleted component {ref}")
+                changes.append(f"PCB: Deleted component {ref}")
         sch_files = [f for f in os.listdir(project_folder) if f.endswith(".kicad_sch")]
         if sch_files:
             sch_path = os.path.join(project_folder, sch_files[0])
