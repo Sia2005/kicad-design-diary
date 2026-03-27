@@ -4,6 +4,44 @@ import json
 from datetime import datetime
 
 
+class ComponentHistoryFrame(wx.Frame):
+
+    def __init__(self, parent, ref, diary_folder):
+        super().__init__(parent, title=f"{ref} — Value History", size=(500, 400))
+        self.ref = ref
+        self.diary_folder = diary_folder
+        panel = wx.Panel(self)
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        title = wx.StaticText(panel, label=f"Complete Value History — {ref}")
+        title_font = wx.Font(11, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
+        title.SetFont(title_font)
+        sizer.Add(title, 0, wx.ALL | wx.ALIGN_CENTER, 10)
+        self.list_ctrl = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.BORDER_SUNKEN)
+        self.list_ctrl.InsertColumn(0, "Timestamp", width=160)
+        self.list_ctrl.InsertColumn(1, "Event", width=300)
+        sizer.Add(self.list_ctrl, 1, wx.ALL | wx.EXPAND, 10)
+        panel.SetSizer(sizer)
+        self.load_history()
+        self.Centre()
+        self.Show()
+
+    def load_history(self):
+        self.list_ctrl.DeleteAllItems()
+        if not os.path.exists(self.diary_folder):
+            return
+        snapshots = sorted([f for f in os.listdir(self.diary_folder) if f.endswith(".json") and not f.startswith("SCH_")])
+        for snapshot_file in snapshots:
+            path = os.path.join(self.diary_folder, snapshot_file)
+            with open(path, "r") as f:
+                data = json.load(f)
+            timestamp = data.get("timestamp", "Unknown")
+            changes = data.get("changes", [])
+            for change in changes:
+                if self.ref in change:
+                    index = self.list_ctrl.InsertItem(self.list_ctrl.GetItemCount(), timestamp)
+                    self.list_ctrl.SetItem(index, 1, change)
+
+
 class DiaryPanel(wx.Frame):
 
     def __init__(self, parent, diary_folder):
@@ -21,9 +59,13 @@ class DiaryPanel(wx.Frame):
         title_font = wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
         title.SetFont(title_font)
         main_sizer.Add(title, 0, wx.ALL | wx.ALIGN_CENTER, 10)
+        hint = wx.StaticText(panel, label="Tip: Double-click any row to see component value history")
+        hint.SetForegroundColour(wx.Colour(100, 100, 100))
+        main_sizer.Add(hint, 0, wx.LEFT | wx.BOTTOM, 10)
         self.list_ctrl = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.BORDER_SUNKEN)
         self.list_ctrl.InsertColumn(0, "Timestamp", width=160)
         self.list_ctrl.InsertColumn(1, "Changes", width=500)
+        self.list_ctrl.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.on_item_double_click)
         main_sizer.Add(self.list_ctrl, 1, wx.ALL | wx.EXPAND, 10)
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
         refresh_btn = wx.Button(panel, label="Refresh")
@@ -32,6 +74,9 @@ class DiaryPanel(wx.Frame):
         export_btn = wx.Button(panel, label="Export Report")
         export_btn.Bind(wx.EVT_BUTTON, self.on_export)
         btn_sizer.Add(export_btn, 0, wx.ALL, 5)
+        history_btn = wx.Button(panel, label="Component History")
+        history_btn.Bind(wx.EVT_BUTTON, self.on_component_history)
+        btn_sizer.Add(history_btn, 0, wx.ALL, 5)
         main_sizer.Add(btn_sizer, 0, wx.ALIGN_CENTER)
         panel.SetSizer(main_sizer)
 
@@ -46,9 +91,46 @@ class DiaryPanel(wx.Frame):
                 data = json.load(f)
             timestamp = data.get("timestamp", "Unknown")
             changes = data.get("changes", [])
+            if not changes:
+                continue
             changes_text = " | ".join(changes) if changes else "No changes detected"
             index = self.list_ctrl.InsertItem(self.list_ctrl.GetItemCount(), timestamp)
             self.list_ctrl.SetItem(index, 1, changes_text)
+
+    def on_item_double_click(self, event):
+        index = event.GetIndex()
+        changes_text = self.list_ctrl.GetItemText(index, 1)
+        import re
+        refs = re.findall(r'\b([A-Z]+[0-9]+)\b', changes_text)
+        if refs:
+            ref = refs[0]
+            ComponentHistoryFrame(self, ref, self.diary_folder)
+        else:
+            wx.MessageBox("No component reference found in this entry.", "KiCad Design Diary", wx.OK)
+
+    def on_component_history(self, event):
+        refs = self.get_all_refs()
+        if not refs:
+            wx.MessageBox("No components tracked yet.", "KiCad Design Diary", wx.OK)
+            return
+        dlg = wx.SingleChoiceDialog(self, "Select a component to view its history:", "Component History", refs)
+        if dlg.ShowModal() == wx.ID_OK:
+            ref = dlg.GetStringSelection()
+            ComponentHistoryFrame(self, ref, self.diary_folder)
+        dlg.Destroy()
+
+    def get_all_refs(self):
+        import re
+        refs = set()
+        snapshots = sorted([f for f in os.listdir(self.diary_folder) if f.endswith(".json") and not f.startswith("SCH_")])
+        for snapshot_file in snapshots:
+            path = os.path.join(self.diary_folder, snapshot_file)
+            with open(path, "r") as f:
+                data = json.load(f)
+            for change in data.get("changes", []):
+                found = re.findall(r'\b([A-Z]+[0-9]+)\b', change)
+                refs.update(found)
+        return sorted(list(refs))
 
     def on_refresh(self, event):
         self.load_entries()
@@ -66,7 +148,8 @@ class DiaryPanel(wx.Frame):
             path = os.path.join(self.diary_folder, snapshot_file)
             with open(path, "r") as f:
                 data = json.load(f)
-            entries.append(data)
+            if data.get("changes"):
+                entries.append(data)
 
         total_changes = sum(len(e.get("changes", [])) for e in entries)
         total_sessions = len(entries)
@@ -76,10 +159,10 @@ class DiaryPanel(wx.Frame):
         component_freq = {}
         for entry in entries:
             for change in entry.get("changes", []):
-                parts = change.split(" ")
+                import re
+                parts = re.findall(r'\b([A-Z]+[0-9]+)\b', change)
                 for part in parts:
-                    if len(part) >= 2 and part[0].isalpha() and any(c.isdigit() for c in part):
-                        component_freq[part] = component_freq.get(part, 0) + 1
+                    component_freq[part] = component_freq.get(part, 0) + 1
 
         top_components = sorted(component_freq.items(), key=lambda x: x[1], reverse=True)[:6]
 
@@ -104,24 +187,25 @@ class DiaryPanel(wx.Frame):
             has_changes = len(changes) > 0
             entry_class = "entry has-changes" if has_changes else "entry"
             tag_class = "entry-tag active" if has_changes else "entry-tag"
-            tag_text = f"{len(changes)} change{'s' if len(changes) != 1 else ''}" if has_changes else "0 changes"
+            tag_text = f"{len(changes)} change{'s' if len(changes) != 1 else ''}"
 
             change_rows = ""
-            if changes:
-                for change in changes:
-                    if "Added" in change:
-                        pill = '<div class="pill pill-add">Added</div>'
-                    elif "Deleted" in change:
-                        pill = '<div class="pill pill-del">Deleted</div>'
-                    else:
-                        pill = '<div class="pill pill-mod">Modified</div>'
-                    change_rows += f"""
+            for change in changes:
+                if "PCB:" in change:
+                    pill = '<div class="pill pill-pcb">PCB</div>'
+                elif "Schematic:" in change:
+                    pill = '<div class="pill pill-sch">SCH</div>'
+                elif "Added" in change:
+                    pill = '<div class="pill pill-add">Added</div>'
+                elif "Deleted" in change:
+                    pill = '<div class="pill pill-del">Deleted</div>'
+                else:
+                    pill = '<div class="pill pill-mod">Modified</div>'
+                change_rows += f"""
         <div class="change-row">
           {pill}
           <div class="change-desc">{change}</div>
         </div>"""
-            else:
-                change_rows = '<div class="no-entry">No changes recorded in this session</div>'
 
             timeline_html += f"""
     <div class="{entry_class}">
@@ -157,6 +241,8 @@ class DiaryPanel(wx.Frame):
     --red-bg: #fdf0f0;
     --blue: #1d4e89;
     --blue-bg: #f0f4fb;
+    --purple: #5b2d8e;
+    --purple-bg: #f5f0fb;
     --rule: #ddd5cc;
   }}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -165,7 +251,7 @@ class DiaryPanel(wx.Frame):
   .masthead {{ padding: 48px 64px 40px; border-bottom: 1px solid var(--rule); display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 24px; }}
   .masthead-title {{ font-family: 'DM Serif Display', serif; font-size: 36px; color: var(--ink); letter-spacing: -0.5px; line-height: 1; }}
   .masthead-title span {{ color: var(--accent); }}
-  .masthead-sub {{ font-size: 12px; color: var(--ink-3); margin-top: 6px; font-weight: 300; letter-spacing: 0.2px; }}
+  .masthead-sub {{ font-size: 12px; color: var(--ink-3); margin-top: 6px; font-weight: 300; }}
   .masthead-date {{ font-family: 'DM Mono', monospace; font-size: 11px; color: var(--ink-3); line-height: 1.8; text-align: right; }}
   .main {{ max-width: 860px; margin: 0 auto; padding: 48px 64px 80px; }}
   .metrics {{ display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--rule); border-radius: 2px; margin-bottom: 48px; overflow: hidden; }}
@@ -198,8 +284,9 @@ class DiaryPanel(wx.Frame):
   .pill-add {{ background: var(--green-bg); color: var(--green); }}
   .pill-del {{ background: var(--red-bg); color: var(--red); }}
   .pill-mod {{ background: var(--blue-bg); color: var(--blue); }}
+  .pill-pcb {{ background: var(--blue-bg); color: var(--blue); }}
+  .pill-sch {{ background: var(--purple-bg); color: var(--purple); }}
   .change-desc {{ font-size: 13px; color: var(--ink-2); line-height: 1.5; font-weight: 300; }}
-  .no-entry {{ font-size: 12px; color: var(--ink-4); font-style: italic; }}
   .colophon {{ margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--rule); font-size: 10px; color: var(--ink-4); display: flex; justify-content: space-between; font-family: 'DM Mono', monospace; }}
 </style>
 </head>
@@ -208,7 +295,7 @@ class DiaryPanel(wx.Frame):
 <div class="masthead">
   <div>
     <div class="masthead-title">KiCad Design<span> Diary</span></div>
-    <div class="masthead-sub">Automatic PCB Change History Report</div>
+    <div class="masthead-sub">Automatic PCB & Schematic Change History Report</div>
   </div>
   <div>
     <div class="masthead-date">Generated: {generated}</div>
@@ -243,8 +330,8 @@ class DiaryPanel(wx.Frame):
   <div class="timeline">{timeline_html}
   </div>
   <div class="colophon">
-    <span>KiCad Design Diary &mdash; Automatic PCB Change Tracking</span>
-    <span>v1.0.0</span>
+    <span>KiCad Design Diary &mdash; PCB & Schematic Change Tracking</span>
+    <span>v2.0.0</span>
   </div>
 </div>
 </body>
