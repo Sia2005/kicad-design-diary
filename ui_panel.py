@@ -78,6 +78,9 @@ class DiaryPanel(wx.Frame):
         history_btn = wx.Button(panel, label="Component History")
         history_btn.Bind(wx.EVT_BUTTON, self.on_component_history)
         btn_sizer.Add(history_btn, 0, wx.ALL, 5)
+        sim_btn = wx.Button(panel, label="Mark Simulation Checkpoint")
+        sim_btn.Bind(wx.EVT_BUTTON, self.on_simulation_checkpoint)
+        btn_sizer.Add(sim_btn, 0, wx.ALL, 5)
         main_sizer.Add(btn_sizer, 0, wx.ALIGN_CENTER)
         panel.SetSizer(main_sizer)
 
@@ -132,6 +135,22 @@ class DiaryPanel(wx.Frame):
                 found = re.findall(r'\b([A-Z]+[0-9]+)\b', change)
                 refs.update(found)
         return sorted(list(refs))
+
+    def on_simulation_checkpoint(self, event):
+        import json
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        filename = "SIM_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".json"
+        checkpoint = {
+            "timestamp": timestamp,
+            "type": "simulation_checkpoint",
+            "changes": ["SIMULATION CHECKPOINT — Design state saved before eSim simulation"]
+        }
+        path = os.path.join(self.diary_folder, filename)
+        with open(path, "w") as f:
+            json.dump(checkpoint, f, indent=2)
+        self.load_entries()
+        wx.MessageBox(f"Simulation checkpoint saved at {timestamp}", "KiCad Design Diary", wx.OK | wx.ICON_INFORMATION)
 
     def on_refresh(self, event):
         self.load_entries()
