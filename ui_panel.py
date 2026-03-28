@@ -193,6 +193,19 @@ class DiaryPanel(wx.Frame):
 
     def on_refresh(self, event):
         self.load_entries()
+        stale_changes = self.get_changes_since_last_checkpoint()
+        for child in self.panel.GetChildren():
+            if isinstance(child, wx.StaticText):
+                label = child.GetLabel()
+                if "STALE" in label or "Netlist is up to date" in label:
+                    if stale_changes:
+                        child.SetLabel(f"⚠️  STALE NETLIST DETECTED — {len(stale_changes)} change(s) since last simulation checkpoint. Re-export before simulating.")
+                        child.SetForegroundColour(wx.Colour(180, 60, 0))
+                    else:
+                        child.SetLabel("✓  Netlist is up to date — no changes since last simulation checkpoint.")
+                        child.SetForegroundColour(wx.Colour(30, 100, 50))
+                    self.panel.Layout()
+                    break
 
     def on_export(self, event):
         with wx.FileDialog(self, "Save Report", wildcard="HTML files (*.html)|*.html",
