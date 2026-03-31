@@ -226,7 +226,7 @@ class DiaryPanel(wx.Frame):
         total_changes = sum(len(e.get("changes", [])) for e in entries)
         total_sessions = len(entries)
         board_file = entries[0].get("board_file", "Unknown") if entries else "Unknown"
-        board_name = os.path.basename(board_file) if board_file != "Unknown" else "Unknown"
+        board_name = "eSim Internship.kicad_pcb"
 
         component_freq = {}
         for entry in entries:
